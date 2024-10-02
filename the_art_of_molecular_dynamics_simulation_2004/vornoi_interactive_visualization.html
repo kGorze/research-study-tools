@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Interactive Voronoi Diagram of Soft Disks</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 250px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .disk {
+            cursor: pointer;
+            stroke: #000;
+            stroke-width: 1px;
+        }
+
+        .cell {
+            opacity: 0.6;
+        }
+
+        .highlight {
+            stroke: #FFD700;
+            stroke-width: 2px;
+        }
+
+        .neighbor {
+            stroke: #FF4500;
+            stroke-width: 2px;
+        }
+
+        #simulation-button {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 8px 12px;
+            font-size: 14px;
+            background-color: #4682B4;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        #simulation-button:hover {
+            background-color: #5A9BD5;
+        }
+
+        svg {
+            background-color: #F0F0F0;
+        }
+    </style>
+</head>
+<body>
+    <button id="simulation-button">Simulate Transition</button>
+    <div id="info"></div>
+    <!-- Include D3.js library -->
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script>
+        // Set up SVG canvas dimensions
+        var width = window.innerWidth;
+        var height = window.innerHeight;
+
+        // Create SVG element with zoom and pan
+        var svg = d3.select("body").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .call(d3.zoom().scaleExtent([0.5, 10]).on("zoom", zoomed))
+            .append("g");
+
+        function zoomed(event) {
+            svg.attr("transform", event.transform);
+        }
+
+        // Initialize data
+        var disks = [];
+        var numDisks = 50;
+        var minRadius = 10;
+        var maxRadius = 20;
+
+        // Generate non-overlapping disks
+        function generateDisks() {
+            disks = [];
+            var attempts = 0;
+            while (disks.length < numDisks && attempts < 10000) {
+                attempts++;
+                var radius = Math.random() * (maxRadius - minRadius) + minRadius;
+                var x = Math.random() * (width - 2 * radius) + radius;
+                var y = Math.random() * (height - 2 * radius) + radius;
+                var newDisk = { x: x, y: y, radius: radius };
+                if (disks.every(function(disk) {
+                    var dx = disk.x - x;
+                    var dy = disk.y - y;
+                    var distance = Math.sqrt(dx * dx + dy * dy);
+                    return distance >= disk.radius + radius;
+                })) {
+                    disks.push(newDisk);
+                }
+            }
+        }
+
+        generateDisks();
+
+        // Now compute the Voronoi diagram
+        var voronoi = d3.Delaunay.from(disks.map(d => [d.x, d.y])).voronoi([0, 0, width, height]);
+
+        // Color scale for Voronoi cells
+        var color = d3.scaleOrdinal(d3.schemeCategory10);
+
+        // Render the cells and disks
+        function render() {
+            svg.selectAll("*").remove();
+
+            // Draw Voronoi cells
+            svg.append("g")
+                .attr("class", "cells")
+                .selectAll("path")
+                .data(disks)
+                .enter().append("path")
+                .attr("class", "cell")
+                .attr("d", function(d, i) { return voronoi.renderCell(i); })
+                .style("fill", function(d, i) { return color(i % 10); })
+                .on("mouseover", mouseover)
+                .on("mouseout", mouseout)
+                .on("click", diskClicked);
+
+            // Draw disks
+            svg.append("g")
+                .attr("class", "disks")
+                .selectAll("circle")
+                .data(disks)
+                .enter().append("circle")
+                .attr("class", "disk")
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y)
+                .attr("r", d => d.radius)
+                .on("mouseover", mouseover)
+                .on("mouseout", mouseout)
+                .on("click", diskClicked);
+        }
+
+        render();
+
+        // Mouseover and mouseout handlers
+        function mouseover(event, d) {
+            var index = disks.indexOf(d);
+            d3.select(this).classed("highlight", true);
+
+            // Highlight Voronoi cell
+            svg.select(".cells").selectAll("path")
+                .filter(function(data, i) { return i === index; })
+                .classed("highlight", true);
+
+            // Highlight neighboring cells
+            var neighbors = voronoi.neighbors(index);
+            neighbors.forEach(function(neighborIndex) {
+                svg.select(".cells").selectAll("path")
+                    .filter(function(data, i) { return i === neighborIndex; })
+                    .classed("neighbor", true);
+            });
+        }
+
+        function mouseout(event, d) {
+            d3.select(this).classed("highlight", false);
+
+            svg.selectAll(".highlight").classed("highlight", false);
+            svg.selectAll(".neighbor").classed("neighbor", false);
+        }
+
+        // Disk click handler
+        function diskClicked(event, d) {
+            event.stopPropagation();
+            // Display properties
+            var infoDiv = d3.select("#info");
+            infoDiv.html(
+                "<h3>Disk Properties</h3>" +
+                "<p><strong>Position:</strong> (" + d.x.toFixed(2) + ", " + d.y.toFixed(2) + ")</p>" +
+                "<p><strong>Radius:</strong> " + d.radius.toFixed(2) + "</p>"
+            );
+
+            // Compute neighboring distances
+            var index = disks.indexOf(d);
+            var neighbors = Array.from(voronoi.neighbors(index));
+            var neighborDistances = neighbors.map(function(neighborIndex) {
+                var neighborDisk = disks[neighborIndex];
+                var dx = neighborDisk.x - d.x;
+                var dy = neighborDisk.y - d.y;
+                var distance = Math.sqrt(dx * dx + dy * dy);
+                return {
+                    index: neighborIndex,
+                    distance: distance
+                };
+            });
+
+            neighborDistances.sort(function(a, b) { return a.distance - b.distance; });
+
+            infoDiv.append("h4").text("Neighbor Distances");
+            var ul = infoDiv.append("ul");
+            neighborDistances.forEach(function(nd) {
+                ul.append("li").text("Disk " + nd.index + ": " + nd.distance.toFixed(2));
+            });
+        }
+
+        // Click to add or remove disks
+        svg.on("click", function(event) {
+            var coords = d3.pointer(event);
+            var x = coords[0];
+            var y = coords[1];
+
+            // Check if clicking on an existing disk
+            var clickedDisk = null;
+            disks.forEach(function(d) {
+                var dx = d.x - x;
+                var dy = d.y - y;
+                var distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance <= d.radius) {
+                    clickedDisk = d;
+                }
+            });
+
+            if (clickedDisk) {
+                // Remove disk
+                disks.splice(disks.indexOf(clickedDisk), 1);
+            } else {
+                // Add new disk
+                var radius = Math.random() * (maxRadius - minRadius) + minRadius;
+                var newDisk = { x: x, y: y, radius: radius };
+                if (disks.every(function(disk) {
+                    var dx = disk.x - x;
+                    var dy = disk.y - y;
+                    var distance = Math.sqrt(dx * dx + dy * dy);
+                    return distance >= disk.radius + radius;
+                })) {
+                    disks.push(newDisk);
+                } else {
+                    alert("Cannot place disk here due to overlap.");
+                }
+            }
+
+            // Recompute Voronoi
+            voronoi = d3.Delaunay.from(disks.map(d => [d.x, d.y])).voronoi([0, 0, width, height]);
+            render();
+        });
+
+        // Simulation button
+        d3.select("#simulation-button").on("click", function() {
+            simulateTransition();
+        });
+
+        function simulateTransition() {
+            // Simple simulation: move disks randomly without overlapping
+            var simulationSteps = 100;
+            var step = 0;
+
+            function simulateStep() {
+                disks.forEach(function(d) {
+                    var angle = Math.random() * 2 * Math.PI;
+                    var dx = Math.cos(angle);
+                    var dy = Math.sin(angle);
+                    var speed = 2;
+                    var newX = d.x + dx * speed;
+                    var newY = d.y + dy * speed;
+
+                    // Keep within bounds
+                    newX = Math.max(d.radius, Math.min(width - d.radius, newX));
+                    newY = Math.max(d.radius, Math.min(height - d.radius, newY));
+
+                    // Check for overlaps
+                    var canMove = disks.every(function(otherDisk) {
+                        if (otherDisk === d) return true;
+                        var dx = otherDisk.x - newX;
+                        var dy = otherDisk.y - newY;
+                        var distance = Math.sqrt(dx * dx + dy * dy);
+                        return distance >= otherDisk.radius + d.radius;
+                    });
+
+                    if (canMove) {
+                        d.x = newX;
+                        d.y = newY;
+                    }
+                });
+
+                // Recompute Voronoi
+                voronoi = d3.Delaunay.from(disks.map(d => [d.x, d.y])).voronoi([0, 0, width, height]);
+                render();
+
+                step++;
+                if (step < simulationSteps) {
+                    requestAnimationFrame(simulateStep);
+                }
+            }
+
+            simulateStep();
+        }
+    </script>
+</body>
+</html>
