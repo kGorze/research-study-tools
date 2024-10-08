@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Molecular Dynamics Simulation with Constraints</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #333;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 50px;
+            left: 10px;
+            background: rgba(50, 50, 50, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 300px;
+        }
+        #info h2 {
+            margin-top: 0;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+        }
+        #controls button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin-right: 10px;
+            cursor: pointer;
+            background-color: #555;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+        }
+        #controls button:hover {
+            background-color: #777;
+        }
+    </style>
+    <!-- Include the p5.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.6.0/lib/p5.min.js"></script>
+</head>
+<body>
+    <div id="controls">
+        <button id="playPauseButton">Play</button>
+    </div>
+    <div id="info"></div>
+    <script>
+        let atoms = [];
+        let bonds = [];
+        let selectedAtom = null;
+        let selectedBond = null;
+        let infoDiv;
+        let isPlaying = false;
+        let playPauseButton;
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+            infoDiv = select('#info');
+            playPauseButton = select('#playPauseButton');
+            playPauseButton.mousePressed(togglePlayPause);
+
+            // Define atoms for butane (C4H10)
+            // Carbon atoms
+            atoms.push(new Atom(0, width / 2 - 150, height / 2, 'C'));
+            atoms.push(new Atom(1, width / 2 - 50, height / 2, 'C'));
+            atoms.push(new Atom(2, width / 2 + 50, height / 2, 'C'));
+            atoms.push(new Atom(3, width / 2 + 150, height / 2, 'C'));
+
+            // Hydrogen atoms attached to carbons
+            addHydrogens();
+
+            // Define bonds between carbon atoms
+            bonds.push(new Bond(atoms[0], atoms[1]));
+            bonds.push(new Bond(atoms[1], atoms[2]));
+            bonds.push(new Bond(atoms[2], atoms[3]));
+
+            // Define bonds between carbons and hydrogens
+            addHydrogenBonds();
+
+            // Initialize velocities for atoms
+            for (let atom of atoms) {
+                atom.velocity = createVector(random(-1, 1), random(-1, 1));
+            }
+        }
+
+        function draw() {
+            background(51);
+
+            // Update and display bonds
+            for (let bond of bonds) {
+                bond.display();
+            }
+
+            // Update and display atoms
+            for (let atom of atoms) {
+                atom.display();
+            }
+
+            // If simulation is playing, update positions
+            if (isPlaying) {
+                updatePositions();
+            }
+
+            // Maintain geometric constraints
+            maintainConstraints();
+        }
+
+        class Atom {
+            constructor(id, x, y, element) {
+                this.id = id;
+                this.position = createVector(x, y);
+                this.element = element;
+                this.selected = false;
+                this.radius = 20;
+                this.velocity = createVector(0, 0);
+            }
+
+            display() {
+                fill(this.selected ? 'yellow' : 'white');
+                stroke('black');
+                strokeWeight(1);
+                ellipse(this.position.x, this.position.y, this.radius * 2);
+
+                fill('black');
+                noStroke();
+                textAlign(CENTER, CENTER);
+                textSize(12);
+                text(this.element, this.position.x, this.position.y);
+            }
+
+            isMouseOver() {
+                return dist(mouseX, mouseY, this.position.x, this.position.y) < this.radius;
+            }
+        }
+
+        class Bond {
+            constructor(atom1, atom2) {
+                this.atom1 = atom1;
+                this.atom2 = atom2;
+                this.selected = false;
+                this.length = p5.Vector.dist(atom1.position, atom2.position);
+            }
+
+            display() {
+                stroke(this.selected ? 'red' : 'white');
+                strokeWeight(4);
+                line(
+                    this.atom1.position.x,
+                    this.atom1.position.y,
+                    this.atom2.position.x,
+                    this.atom2.position.y
+                );
+            }
+
+            isMouseNear() {
+                let d1 = dist(mouseX, mouseY, this.atom1.position.x, this.atom1.position.y);
+                let d2 = dist(mouseX, mouseY, this.atom2.position.x, this.atom2.position.y);
+                let lineLen = p5.Vector.dist(this.atom1.position, this.atom2.position);
+                let buffer = 5;
+                return d1 + d2 >= lineLen - buffer && d1 + d2 <= lineLen + buffer;
+            }
+        }
+
+        function mousePressed() {
+            let atomClicked = false;
+            let bondClicked = false;
+
+            // Check atoms
+            for (let atom of atoms) {
+                if (atom.isMouseOver()) {
+                    atom.selected = !atom.selected;
+                    if (atom.selected) {
+                        selectedAtom = atom;
+                        displayAtomInfo(atom);
+                    } else {
+                        selectedAtom = null;
+                        hideInfo();
+                    }
+                    atomClicked = true;
+                    break;
+                }
+            }
+
+            // Check bonds if no atom was clicked
+            if (!atomClicked) {
+                for (let bond of bonds) {
+                    if (bond.isMouseNear()) {
+                        bond.selected = !bond.selected;
+                        if (bond.selected) {
+                            selectedBond = bond;
+                            displayBondInfo(bond);
+                        } else {
+                            selectedBond = null;
+                            hideInfo();
+                        }
+                        bondClicked = true;
+                        break;
+                    }
+                }
+            }
+
+            // If neither atom nor bond was clicked, hide info
+            if (!atomClicked && !bondClicked) {
+                if (selectedAtom) selectedAtom.selected = false;
+                if (selectedBond) selectedBond.selected = false;
+                selectedAtom = null;
+                selectedBond = null;
+                hideInfo();
+            }
+        }
+
+        function displayAtomInfo(atom) {
+            let connectedBonds = bonds.filter(
+                bond => bond.atom1 === atom || bond.atom2 === atom
+            );
+
+            let info = `<h2>Atom Info</h2>
+                        <p><strong>Element:</strong> ${atom.element}</p>
+                        <p><strong>ID:</strong> ${atom.id}</p>`;
+
+            info += `<h3>Connected Bonds:</h3><ul>`;
+            for (let bond of connectedBonds) {
+                let otherAtom = bond.atom1 === atom ? bond.atom2 : bond.atom1;
+                let angle = calculateAngle(atom, otherAtom);
+                info += `<li>Bond with Atom ${otherAtom.id} (${otherAtom.element}) - Length: ${bond.length.toFixed(2)}, Angle: ${angle.toFixed(2)}°</li>`;
+            }
+            info += `</ul>`;
+            infoDiv.html(info);
+        }
+
+        function displayBondInfo(bond) {
+            let angle = calculateAngle(bond.atom1, bond.atom2);
+            let info = `<h2>Bond Info</h2>
+                        <p><strong>Between Atom ${bond.atom1.id} (${bond.atom1.element}) and Atom ${bond.atom2.id} (${bond.atom2.element})</strong></p>
+                        <p><strong>Length:</strong> ${bond.length.toFixed(2)}</p>
+                        <p><strong>Angle:</strong> ${angle.toFixed(2)}°</p>`;
+            infoDiv.html(info);
+        }
+
+        function hideInfo() {
+            infoDiv.html('');
+        }
+
+        function calculateAngle(atom1, atom2) {
+            let dx = atom2.position.x - atom1.position.x;
+            let dy = atom2.position.y - atom1.position.y;
+            let angle = degrees(atan2(dy, dx));
+            return angle < 0 ? angle + 360 : angle;
+        }
+
+        function maintainConstraints() {
+            // Iteratively enforce constraints
+            let iterations = 5;
+            for (let i = 0; i < iterations; i++) {
+                // Maintain bond lengths
+                for (let bond of bonds) {
+                    let delta = p5.Vector.sub(bond.atom2.position, bond.atom1.position);
+                    let deltaLength = delta.mag();
+                    let difference = (deltaLength - bond.length) / deltaLength;
+                    let correction = delta.mult(0.5 * difference);
+
+                    bond.atom1.position.add(correction);
+                    bond.atom2.position.sub(correction);
+                }
+
+                // Optionally, maintain bond angles here
+            }
+        }
+
+        function addHydrogens() {
+            let hydrogenId = atoms.length;
+            let offset = 50;
+
+            // Add hydrogens to first carbon
+            atoms.push(new Atom(hydrogenId++, atoms[0].position.x - offset, atoms[0].position.y - offset, 'H'));
+            atoms.push(new Atom(hydrogenId++, atoms[0].position.x - offset, atoms[0].position.y + offset, 'H'));
+            atoms.push(new Atom(hydrogenId++, atoms[0].position.x, atoms[0].position.y - offset * 1.5, 'H'));
+
+            // Add hydrogens to second carbon
+            atoms.push(new Atom(hydrogenId++, atoms[1].position.x, atoms[1].position.y - offset * 1.5, 'H'));
+            atoms.push(new Atom(hydrogenId++, atoms[1].position.x, atoms[1].position.y + offset * 1.5, 'H'));
+
+            // Add hydrogens to third carbon
+            atoms.push(new Atom(hydrogenId++, atoms[2].position.x, atoms[2].position.y - offset * 1.5, 'H'));
+            atoms.push(new Atom(hydrogenId++, atoms[2].position.x, atoms[2].position.y + offset * 1.5, 'H'));
+
+            // Add hydrogens to fourth carbon
+            atoms.push(new Atom(hydrogenId++, atoms[3].position.x + offset, atoms[3].position.y - offset, 'H'));
+            atoms.push(new Atom(hydrogenId++, atoms[3].position.x + offset, atoms[3].position.y + offset, 'H'));
+            atoms.push(new Atom(hydrogenId++, atoms[3].position.x, atoms[3].position.y + offset * 1.5, 'H'));
+        }
+
+        function addHydrogenBonds() {
+            // Assuming hydrogens were added in the same order
+            let h = atoms.slice(4); // Hydrogens start from index 4
+
+            // Bonds for first carbon
+            bonds.push(new Bond(atoms[0], h[0]));
+            bonds.push(new Bond(atoms[0], h[1]));
+            bonds.push(new Bond(atoms[0], h[2]));
+
+            // Bonds for second carbon
+            bonds.push(new Bond(atoms[1], h[3]));
+            bonds.push(new Bond(atoms[1], h[4]));
+
+            // Bonds for third carbon
+            bonds.push(new Bond(atoms[2], h[5]));
+            bonds.push(new Bond(atoms[2], h[6]));
+
+            // Bonds for fourth carbon
+            bonds.push(new Bond(atoms[3], h[7]));
+            bonds.push(new Bond(atoms[3], h[8]));
+            bonds.push(new Bond(atoms[3], h[9]));
+        }
+
+        function updatePositions() {
+            // Apply simple dynamics (e.g., random forces)
+            for (let atom of atoms) {
+                // Apply velocity
+                atom.position.add(atom.velocity);
+
+                // Simple boundary conditions
+                if (atom.position.x < 0 || atom.position.x > width) {
+                    atom.velocity.x *= -1;
+                }
+                if (atom.position.y < 0 || atom.position.y > height) {
+                    atom.velocity.y *= -1;
+                }
+            }
+        }
+
+        function togglePlayPause() {
+            isPlaying = !isPlaying;
+            playPauseButton.html(isPlaying ? 'Pause' : 'Play');
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+        }
+    </script>
+</body>
+</html>
