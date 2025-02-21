@@ -110,10 +110,13 @@ class TIP4POptimizer:
         
         return TIP4PParameters.from_array(result.x)
     
-    def run_two_step_optimization(self) -> Tuple[TIP4PParameters, Dict]:
+    def run_two_step_optimization(self, bounds: List[Tuple[float, float]]) -> Tuple[TIP4PParameters, Dict]:
         """
         Run the two-step parametrization process.
         
+        Args:
+            bounds: List of (min, max) tuples for each parameter
+            
         Returns:
             Tuple of (optimized parameters, optimization history)
         """
@@ -232,7 +235,7 @@ def main():
     print(f"  dOM = {initial_params.dOM:.3f} Å")
     print(f"  qM = {initial_params.qM:.3f} e")
     
-    final_params, history = optimizer.run_two_step_optimization()
+    final_params, history = optimizer.run_two_step_optimization(bounds)
     
     # Print detailed results
     print("\nOptimization Results:")
@@ -263,12 +266,26 @@ def main():
     
     # Plot results
     import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    from matplotlib.gridspec import GridSpec
     
-    # Create figure with 2x2 subplots
+    # Set modern style directly
+    plt.rcParams['font.size'] = 10
+    plt.rcParams['axes.labelsize'] = 12
+    plt.rcParams['axes.titlesize'] = 12
+    plt.rcParams['legend.fontsize'] = 10
+    plt.rcParams['figure.titlesize'] = 14
+    plt.rcParams['axes.grid'] = True
+    plt.rcParams['grid.alpha'] = 0.3
+    plt.rcParams['axes.facecolor'] = '#f0f0f0'
+    plt.rcParams['figure.facecolor'] = 'white'
+    
+    # Create figure with custom layout
     fig = plt.figure(figsize=(15, 12))
+    gs = GridSpec(2, 2, figure=fig)
     
-    # Plot 1: Parameter evolution
-    ax1 = fig.add_subplot(221)
+    # Plot 1: Parameter evolution with bounds
+    ax1 = fig.add_subplot(gs[0, 0])
     stages = ['initial', 'intermediate', 'final']
     x = range(len(stages))
     params = ['epsilon', 'sigma', 'qH', 'dOM']
@@ -278,63 +295,118 @@ def main():
         'qH': 'qH (e)',
         'dOM': 'dOM (Å)'
     }
-    for param in params:
+    param_bounds = {
+        'epsilon': (0.4, 2.0),
+        'sigma': (2.5, 4.0),
+        'qH': (0.3, 0.7),
+        'dOM': (0.1, 0.25)
+    }
+    markers = ['o', 's', '^', 'D']  # Different markers for each parameter
+    
+    for param, marker in zip(params, markers):
         values = [getattr(history[stage]['params'], param) for stage in stages]
-        ax1.plot(x, values, 'o-', label=param_labels[param], linewidth=2)
+        # Plot parameter evolution
+        ax1.plot(x, values, marker=marker, label=param_labels[param], linewidth=2, markersize=8)
+        # Add bounds as shaded regions
+        bound_min, bound_max = param_bounds[param]
+        ax1.fill_between([-0.2, 2.2], [bound_min]*2, [bound_max]*2, alpha=0.1)
+    
     ax1.set_xticks(x)
-    ax1.set_xticklabels(stages)
+    ax1.set_xticklabels([s.capitalize() for s in stages])
     ax1.set_ylabel('Parameter Value')
-    ax1.set_title('Parameter Evolution')
-    ax1.legend()
+    ax1.set_title('Parameter Evolution\nwith Optimization Bounds', pad=20)
+    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax1.grid(True, alpha=0.3)
     
-    # Plot 2: Property evolution
-    ax2 = fig.add_subplot(222)
+    # Plot 2: Property evolution with tolerance bands
+    ax2 = fig.add_subplot(gs[0, 1])
     properties = ['Ice Ih density', 'Melting temperature', 'Enthalpy of fusion']
     prop_scales = {
         'Ice Ih density': 1.0,
-        'Melting temperature': 1/273.15,  # Normalize to T_m
-        'Enthalpy of fusion': 1/6.012     # Normalize to ΔH_fus
+        'Melting temperature': 1/273.15,
+        'Enthalpy of fusion': 1/6.012
     }
+    prop_labels = {
+        'Ice Ih density': 'Ice Ih density (g/cm³)',
+        'Melting temperature': 'Melting temperature (K)',
+        'Enthalpy of fusion': 'Enthalpy of fusion (kJ/mol)'
+    }
+    
     for prop in properties:
         values = [history[stage]['values'][prop] * prop_scales[prop] for stage in stages]
-        ax2.plot(x, values, 'o-', label=prop, linewidth=2)
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(stages)
-    ax2.set_ylabel('Normalized Property Value')
-    ax2.set_title('Property Evolution\n(Normalized to Experimental Values)')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    ax2.axhline(y=1.0, color='k', linestyle='--', alpha=0.3)
+        ax2.plot(x, values, 'o-', label=prop_labels[prop], linewidth=2, markersize=8)
+        # Add tolerance band (±2%)
+        ax2.fill_between([-0.2, 2.2], [0.98]*2, [1.02]*2, alpha=0.1, color='gray')
     
-    # Plot 3: Lennard-Jones potential comparison
-    ax3 = fig.add_subplot(223)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([s.capitalize() for s in stages])
+    ax2.set_ylabel('Normalized Property Value')
+    ax2.set_title('Property Evolution\nNormalized to Experimental Values (±2% tolerance)', pad=20)
+    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax2.grid(True, alpha=0.3)
+    ax2.axhline(y=1.0, color='k', linestyle='--', alpha=0.5, label='Target')
+    
+    # Plot 3: Lennard-Jones potential with inset
+    ax3 = fig.add_subplot(gs[1, 0])
     r = np.linspace(2.5, 5.0, 100)
-    colors = ['b', 'g', 'r']
-    for stage, color in zip(stages, colors):
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Better color scheme
+    labels = ['Initial', 'Intermediate', 'Final']
+    
+    # Create inset for zoom
+    axins = ax3.inset_axes([0.15, 0.15, 0.4, 0.4])
+    
+    for stage, color, label in zip(stages, colors, labels):
         params = history[stage]['params']
-        u = [lennard_jones_potential(np.array([ri]), 1.0, 273.15, epsilon=params.epsilon, sigma=params.sigma) for ri in r]
-        ax3.plot(r, u, label=f'{stage} parameters', color=color, linewidth=2)
+        u = [lennard_jones_potential(np.array([ri]), 1.0, 273.15, 
+             epsilon=params.epsilon, sigma=params.sigma) for ri in r]
+        # Main plot
+        line = ax3.plot(r, u, label=f'{label}', color=color, linewidth=2)
+        # Inset plot
+        axins.plot(r, u, color=color, linewidth=2)
+    
+    # Set inset limits to zoom on potential well
+    axins.set_xlim(3.0, 3.5)
+    axins.set_ylim(-0.004, -0.002)
+    ax3.indicate_inset_zoom(axins)
+    
     ax3.set_xlabel('Distance (Å)')
     ax3.set_ylabel('Potential Energy (kJ/mol)')
-    ax3.set_title('TIP4P Lennard-Jones Potential')
-    ax3.legend()
+    ax3.set_title('TIP4P Lennard-Jones Potential\nwith Zoom on Potential Well', pad=20)
+    ax3.legend(loc='lower right')
     ax3.grid(True, alpha=0.3)
     
-    # Plot 4: Property comparison
-    ax4 = fig.add_subplot(224)
+    # Plot 4: Property comparison with error bars
+    ax4 = fig.add_subplot(gs[1, 1])
     width = 0.25
     x = np.arange(len(properties))
-    for i, stage in enumerate(stages):
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Match LJ plot colors
+    
+    for i, (stage, color) in enumerate(zip(stages, colors)):
         values = [history[stage]['values'][prop] * prop_scales[prop] for prop in properties]
-        ax4.bar(x + i*width, values, width, label=stage)
+        # Add error bars (2% uncertainty)
+        yerr = [0.02 * v for v in values]
+        ax4.bar(x + i*width, values, width, label=stage.capitalize(), 
+                color=color, alpha=0.7, yerr=yerr, capsize=5)
+    
+    # Improve property labels
+    prop_short_labels = {
+        'Ice Ih density': 'ρ(ice)',
+        'Melting temperature': 'T_m',
+        'Enthalpy of fusion': 'ΔH_fus'
+    }
+    
     ax4.set_xticks(x + width)
-    ax4.set_xticklabels(properties, rotation=45, ha='right')
+    ax4.set_xticklabels([prop_short_labels[p] for p in properties], rotation=0)
     ax4.set_ylabel('Normalized Value')
-    ax4.set_title('Property Comparison\n(Normalized to Experimental Values)')
+    ax4.set_title('Property Comparison\nNormalized to Experimental Values', pad=20)
     ax4.legend()
     ax4.grid(True, alpha=0.3, axis='y')
-    ax4.axhline(y=1.0, color='k', linestyle='--', alpha=0.3)
+    ax4.axhline(y=1.0, color='k', linestyle='--', alpha=0.5, label='Target')
+    
+    # Add property units as text
+    for i, prop in enumerate(properties):
+        ax4.text(i + width, 0.1, f'({prop_labels[prop].split("(")[1].strip(")")})\\n', 
+                 ha='center', va='bottom')
     
     plt.tight_layout()
     plt.savefig('tip4p_optimization_results.png', dpi=300, bbox_inches='tight')
