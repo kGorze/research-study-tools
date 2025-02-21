@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
-from example_gibbs_duhem import (
+from .example_gibbs_duhem import (
     lennard_jones_potential,
     calculate_total_energy,
     calculate_phase_x_g,

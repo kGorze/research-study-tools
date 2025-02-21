@@ -1,5 +1,5 @@
 import numpy as np
-from hamiltonian_gibbs_duhem import HamiltonianGibbsDuhemIntegrator, PhaseState
+from .hamiltonian_gibbs_duhem import HamiltonianGibbsDuhemIntegrator, PhaseState
 
 def lennard_jones_potential(coordinates: np.ndarray, p: float, T: float, epsilon: float = 1.0, sigma: float = 1.0) -> float:
     """
